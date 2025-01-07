@@ -4,6 +4,7 @@ PROG=	sysctl
 MAN=	sysctl.8
 
 CPPFLAGS+=	-D_LIBKVM
+CPPFLAGS+=	-I${.CURDIR}/../../sys # XXX
 
 afterinstall:
 	ln -sf ../../sbin/sysctl ${DESTDIR}/usr/sbin
