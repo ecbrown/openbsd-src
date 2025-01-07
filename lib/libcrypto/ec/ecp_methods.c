@@ -1,4 +1,4 @@
-/* $OpenBSD: ecp_methods.c,v 1.18 2025/01/05 16:07:08 tb Exp $ */
+/* $OpenBSD: ecp_methods.c,v 1.26 2025/01/07 08:30:52 tb Exp $ */
 /* Includes code written by Lenka Fibikova <fibikova@exp-math.uni-essen.de>
  * for the OpenSSL project.
  * Includes code written by Bodo Moeller for the OpenSSL project.
@@ -85,21 +85,6 @@
  */
 
 static int
-ec_group_copy(EC_GROUP *dest, const EC_GROUP *src)
-{
-	if (!bn_copy(dest->p, src->p))
-		return 0;
-	if (!bn_copy(dest->a, src->a))
-		return 0;
-	if (!bn_copy(dest->b, src->b))
-		return 0;
-
-	dest->a_is_minus3 = src->a_is_minus3;
-
-	return 1;
-}
-
-static int
 ec_decode_scalar(const EC_GROUP *group, BIGNUM *bn, const BIGNUM *x, BN_CTX *ctx)
 {
 	if (bn == NULL)
@@ -116,23 +101,6 @@ ec_encode_scalar(const EC_GROUP *group, BIGNUM *bn, const BIGNUM *x, BN_CTX *ctx
 {
 	if (!BN_nnmod(bn, x, group->p, ctx))
 		return 0;
-
-	if (group->meth->field_encode != NULL)
-		return group->meth->field_encode(group, bn, bn, ctx);
-
-	return 1;
-}
-
-static int
-ec_encode_z_coordinate(const EC_GROUP *group, BIGNUM *bn, int *is_one,
-    const BIGNUM *z, BN_CTX *ctx)
-{
-	if (!BN_nnmod(bn, z, group->p, ctx))
-		return 0;
-
-	*is_one = BN_is_one(bn);
-	if (*is_one && group->meth->field_set_to_one != NULL)
-		return group->meth->field_set_to_one(group, bn, ctx);
 
 	if (group->meth->field_encode != NULL)
 		return group->meth->field_encode(group, bn, bn, ctx);
@@ -199,129 +167,28 @@ ec_group_get_curve(const EC_GROUP *group, BIGNUM *p, BIGNUM *a, BIGNUM *b,
 }
 
 static int
-ec_group_get_degree(const EC_GROUP *group)
-{
-	return BN_num_bits(group->p);
-}
-
-static int
-ec_group_check_discriminant(const EC_GROUP *group, BN_CTX *ctx)
-{
-	BIGNUM *p, *a, *b, *discriminant;
-	int ret = 0;
-
-	BN_CTX_start(ctx);
-
-	if ((p = BN_CTX_get(ctx)) == NULL)
-		goto err;
-	if ((a = BN_CTX_get(ctx)) == NULL)
-		goto err;
-	if ((b = BN_CTX_get(ctx)) == NULL)
-		goto err;
-	if ((discriminant = BN_CTX_get(ctx)) == NULL)
-		goto err;
-
-	if (!EC_GROUP_get_curve(group, p, a, b, ctx))
-		goto err;
-
-	/*
-	 * Check that the discriminant 4a^3 + 27b^2 is non-zero modulo p.
-	 */
-
-	if (BN_is_zero(a) && BN_is_zero(b))
-		goto err;
-	if (BN_is_zero(a) || BN_is_zero(b))
-		goto done;
-
-	/* Compute the discriminant: first 4a^3, then 27b^2, then their sum. */
-	if (!BN_mod_sqr(discriminant, a, p, ctx))
-		goto err;
-	if (!BN_mod_mul(discriminant, discriminant, a, p, ctx))
-		goto err;
-	if (!BN_lshift(discriminant, discriminant, 2))
-		goto err;
-
-	if (!BN_mod_sqr(b, b, p, ctx))
-		goto err;
-	if (!BN_mul_word(b, 27))
-		goto err;
-
-	if (!BN_mod_add(discriminant, discriminant, b, p, ctx))
-		goto err;
-
-	if (BN_is_zero(discriminant))
-		goto err;
-
- done:
-	ret = 1;
-
- err:
-	BN_CTX_end(ctx);
-
-	return ret;
-}
-
-static int
-ec_set_Jprojective_coordinates(const EC_GROUP *group, EC_POINT *point,
-    const BIGNUM *x, const BIGNUM *y, const BIGNUM *z, BN_CTX *ctx)
-{
-	int ret = 0;
-
-	/*
-	 * Setting individual coordinates allows the creation of bad points.
-	 * EC_POINT_set_Jprojective_coordinates() checks at the API boundary.
-	 */
-
-	if (x != NULL) {
-		if (!ec_encode_scalar(group, point->X, x, ctx))
-			goto err;
-	}
-	if (y != NULL) {
-		if (!ec_encode_scalar(group, point->Y, y, ctx))
-			goto err;
-	}
-	if (z != NULL) {
-		if (!ec_encode_z_coordinate(group, point->Z, &point->Z_is_one,
-		    z, ctx))
-			goto err;
-	}
-
-	ret = 1;
-
- err:
-	return ret;
-}
-
-static int
-ec_get_Jprojective_coordinates(const EC_GROUP *group, const EC_POINT *point,
-    BIGNUM *x, BIGNUM *y, BIGNUM *z, BN_CTX *ctx)
-{
-	int ret = 0;
-
-	if (!ec_decode_scalar(group, x, point->X, ctx))
-		goto err;
-	if (!ec_decode_scalar(group, y, point->Y, ctx))
-		goto err;
-	if (!ec_decode_scalar(group, z, point->Z, ctx))
-		goto err;
-
-	ret = 1;
-
- err:
-	return ret;
-}
-
-static int
 ec_point_set_affine_coordinates(const EC_GROUP *group, EC_POINT *point,
     const BIGNUM *x, const BIGNUM *y, BN_CTX *ctx)
 {
+	int ret = 0;
+
 	if (x == NULL || y == NULL) {
-		/* unlike for projective coordinates, we do not tolerate this */
 		ECerror(ERR_R_PASSED_NULL_PARAMETER);
-		return 0;
+		goto err;
 	}
-	return EC_POINT_set_Jprojective_coordinates(group, point, x, y,
-	    BN_value_one(), ctx);
+
+	if (!ec_encode_scalar(group, point->X, x, ctx))
+		goto err;
+	if (!ec_encode_scalar(group, point->Y, y, ctx))
+		goto err;
+	if (!ec_encode_scalar(group, point->Z, BN_value_one(), ctx))
+		goto err;
+	point->Z_is_one = 1;
+
+	ret = 1;
+
+ err:
+	return ret;
 }
 
 static int
@@ -344,7 +211,10 @@ ec_point_get_affine_coordinates(const EC_GROUP *group, const EC_POINT *point,
 	if ((Z_3 = BN_CTX_get(ctx)) == NULL)
 		goto err;
 
-	/* Convert from projective coordinates (X, Y, Z) into (X/Z^2, Y/Z^3). */
+	/*
+	 * Convert from Jacobian projective coordinates (X, Y, Z) into
+	 * (X/Z^2, Y/Z^3).
+	 */
 
 	if (!ec_decode_scalar(group, z, point->Z, ctx))
 		goto err;
@@ -1058,7 +928,7 @@ ec_points_make_affine(const EC_GROUP *group, size_t num, EC_POINT *points[],
     BN_CTX *ctx)
 {
 	BIGNUM **prod_Z = NULL;
-	BIGNUM *tmp, *tmp_Z;
+	BIGNUM *one, *tmp, *tmp_Z;
 	size_t i;
 	int ret = 0;
 
@@ -1067,9 +937,14 @@ ec_points_make_affine(const EC_GROUP *group, size_t num, EC_POINT *points[],
 
 	BN_CTX_start(ctx);
 
+	if ((one = BN_CTX_get(ctx)) == NULL)
+		goto err;
 	if ((tmp = BN_CTX_get(ctx)) == NULL)
 		goto err;
 	if ((tmp_Z = BN_CTX_get(ctx)) == NULL)
+		goto err;
+
+	if (!ec_encode_scalar(group, one, BN_value_one(), ctx))
 		goto err;
 
 	if ((prod_Z = calloc(num, sizeof *prod_Z)) == NULL)
@@ -1088,13 +963,8 @@ ec_points_make_affine(const EC_GROUP *group, size_t num, EC_POINT *points[],
 		if (!bn_copy(prod_Z[0], points[0]->Z))
 			goto err;
 	} else {
-		if (group->meth->field_set_to_one != NULL) {
-			if (!group->meth->field_set_to_one(group, prod_Z[0], ctx))
-				goto err;
-		} else {
-			if (!BN_one(prod_Z[0]))
-				goto err;
-		}
+		if (!bn_copy(prod_Z[0], one))
+			goto err;
 	}
 
 	for (i = 1; i < num; i++) {
@@ -1173,13 +1043,8 @@ ec_points_make_affine(const EC_GROUP *group, size_t num, EC_POINT *points[],
 		if (!group->meth->field_mul(group, p->Y, p->Y, tmp, ctx))
 			goto err;
 
-		if (group->meth->field_set_to_one != NULL) {
-			if (!group->meth->field_set_to_one(group, p->Z, ctx))
-				goto err;
-		} else {
-			if (!BN_one(p->Z))
-				goto err;
-		}
+		if (!bn_copy(p->Z, one))
+			goto err;
 		p->Z_is_one = 1;
 	}
 
@@ -1206,7 +1071,7 @@ ec_field_sqr(const EC_GROUP *group, BIGNUM *r, const BIGNUM *a, BN_CTX *ctx)
 }
 
 /*
- * Apply randomization of EC point projective coordinates:
+ * Apply randomization of EC point Jacobian projective coordinates:
  *
  *	(X, Y, Z) = (lambda^2 * X, lambda^3 * Y, lambda * Z)
  *
@@ -1387,7 +1252,7 @@ ec_mul_ct(const EC_GROUP *group, EC_POINT *r, const BIGNUM *scalar,
 	 * Apply coordinate blinding for EC_POINT if the underlying EC_METHOD
 	 * implements it.
 	 */
-	if (!ec_point_blind_coordinates(group, s, ctx))
+	if (!ec_blind_coordinates(group, s, ctx))
 		goto err;
 
 	/* top bit is a 1, in a fixed pos */
@@ -1508,81 +1373,35 @@ ec_mul_double_nonct(const EC_GROUP *group, EC_POINT *r, const BIGNUM *g_scalar,
 	return ec_wnaf_mul(group, r, g_scalar, point, p_scalar, ctx);
 }
 
-static void
-ec_mont_group_clear(EC_GROUP *group)
-{
-	BN_MONT_CTX_free(group->mont_ctx);
-	group->mont_ctx = NULL;
-
-	BN_free(group->mont_one);
-	group->mont_one = NULL;
-}
-
-static int
-ec_mont_group_copy(EC_GROUP *dest, const EC_GROUP *src)
-{
-	ec_mont_group_clear(dest);
-
-	if (!ec_group_copy(dest, src))
-		return 0;
-
-	if (src->mont_ctx != NULL) {
-		dest->mont_ctx = BN_MONT_CTX_new();
-		if (dest->mont_ctx == NULL)
-			return 0;
-		if (!BN_MONT_CTX_copy(dest->mont_ctx, src->mont_ctx))
-			goto err;
-	}
-	if (src->mont_one != NULL) {
-		dest->mont_one = BN_dup(src->mont_one);
-		if (dest->mont_one == NULL)
-			goto err;
-	}
-	return 1;
-
- err:
-	if (dest->mont_ctx != NULL) {
-		BN_MONT_CTX_free(dest->mont_ctx);
-		dest->mont_ctx = NULL;
-	}
-	return 0;
-}
-
 static int
 ec_mont_group_set_curve(EC_GROUP *group, const BIGNUM *p, const BIGNUM *a,
     const BIGNUM *b, BN_CTX *ctx)
 {
 	BN_MONT_CTX *mont = NULL;
-	BIGNUM *one = NULL;
 	int ret = 0;
 
-	ec_mont_group_clear(group);
+	BN_MONT_CTX_free(group->mont_ctx);
+	group->mont_ctx = NULL;
 
-	mont = BN_MONT_CTX_new();
-	if (mont == NULL)
+	if ((mont = BN_MONT_CTX_new()) == NULL)
 		goto err;
 	if (!BN_MONT_CTX_set(mont, p, ctx)) {
 		ECerror(ERR_R_BN_LIB);
 		goto err;
 	}
-	one = BN_new();
-	if (one == NULL)
-		goto err;
-	if (!BN_to_montgomery(one, BN_value_one(), mont, ctx))
-		goto err;
-
 	group->mont_ctx = mont;
 	mont = NULL;
-	group->mont_one = one;
-	one = NULL;
 
-	ret = ec_group_set_curve(group, p, a, b, ctx);
-	if (!ret)
-		ec_mont_group_clear(group);
+	if (!ec_group_set_curve(group, p, a, b, ctx)) {
+		BN_MONT_CTX_free(group->mont_ctx);
+		group->mont_ctx = NULL;
+		goto err;
+	}
+
+	ret = 1;
 
  err:
 	BN_MONT_CTX_free(mont);
-	BN_free(one);
 
 	return ret;
 }
@@ -1631,29 +1450,10 @@ ec_mont_field_decode(const EC_GROUP *group, BIGNUM *r, const BIGNUM *a,
 	return BN_from_montgomery(r, a, group->mont_ctx, ctx);
 }
 
-static int
-ec_mont_field_set_to_one(const EC_GROUP *group, BIGNUM *r, BN_CTX *ctx)
-{
-	if (group->mont_one == NULL) {
-		ECerror(EC_R_NOT_INITIALIZED);
-		return 0;
-	}
-	if (!bn_copy(r, group->mont_one))
-		return 0;
-
-	return 1;
-}
-
 static const EC_METHOD ec_GFp_simple_method = {
 	.field_type = NID_X9_62_prime_field,
-	.group_copy = ec_group_copy,
 	.group_set_curve = ec_group_set_curve,
 	.group_get_curve = ec_group_get_curve,
-	.group_get_degree = ec_group_get_degree,
-	.group_order_bits = ec_group_simple_order_bits,
-	.group_check_discriminant = ec_group_check_discriminant,
-	.point_set_Jprojective_coordinates = ec_set_Jprojective_coordinates,
-	.point_get_Jprojective_coordinates = ec_get_Jprojective_coordinates,
 	.point_set_affine_coordinates = ec_point_set_affine_coordinates,
 	.point_get_affine_coordinates = ec_point_get_affine_coordinates,
 	.point_set_compressed_coordinates = ec_set_compressed_coordinates,
@@ -1669,7 +1469,6 @@ static const EC_METHOD ec_GFp_simple_method = {
 	.mul_double_nonct = ec_mul_double_nonct,
 	.field_mul = ec_field_mul,
 	.field_sqr = ec_field_sqr,
-	.blind_coordinates = ec_blind_coordinates,
 };
 
 const EC_METHOD *
@@ -1681,14 +1480,8 @@ LCRYPTO_ALIAS(EC_GFp_simple_method);
 
 static const EC_METHOD ec_GFp_mont_method = {
 	.field_type = NID_X9_62_prime_field,
-	.group_copy = ec_mont_group_copy,
 	.group_set_curve = ec_mont_group_set_curve,
 	.group_get_curve = ec_group_get_curve,
-	.group_get_degree = ec_group_get_degree,
-	.group_order_bits = ec_group_simple_order_bits,
-	.group_check_discriminant = ec_group_check_discriminant,
-	.point_set_Jprojective_coordinates = ec_set_Jprojective_coordinates,
-	.point_get_Jprojective_coordinates = ec_get_Jprojective_coordinates,
 	.point_set_affine_coordinates = ec_point_set_affine_coordinates,
 	.point_get_affine_coordinates = ec_point_get_affine_coordinates,
 	.point_set_compressed_coordinates = ec_set_compressed_coordinates,
@@ -1706,8 +1499,6 @@ static const EC_METHOD ec_GFp_mont_method = {
 	.field_sqr = ec_mont_field_sqr,
 	.field_encode = ec_mont_field_encode,
 	.field_decode = ec_mont_field_decode,
-	.field_set_to_one = ec_mont_field_set_to_one,
-	.blind_coordinates = ec_blind_coordinates,
 };
 
 const EC_METHOD *
