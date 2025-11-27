@@ -523,8 +523,15 @@ vn_ioctl(struct file *fp, u_long com, caddr_t data, struct proc *p)
 
 		} else if (com == FIOASYNC)			/* XXX */
 			error = 0;				/* XXX */
+<<<<<<< HEAD
                 if (error != ENOTTY)
                        break;
+||||||| 6d253f95424
+		break;
+=======
+		if (error != ENOTTY)
+			break;
+>>>>>>> d0112b2a62c03920ac11376d51d880c7e9a6b383
 
 	case VFIFO:
 	case VCHR:

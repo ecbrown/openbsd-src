@@ -67,13 +67,24 @@ enum vtagtype	{
 	VT_NON, VT_UFS, VT_NFS, VT_MFS, VT_MSDOSFS,
 	VT_PORTAL, VT_PROCFS, VT_AFS, VT_ISOFS, VT_ADOSFS,
 	VT_EXT2FS, VT_VFS, VT_NTFS, VT_UDF, VT_FUSEFS, VT_TMPFS,
+<<<<<<< HEAD
         VT_HAMMER2,
+||||||| 6d253f95424
+=======
+	VT_HAMMER2,
+>>>>>>> d0112b2a62c03920ac11376d51d880c7e9a6b383
 };
 
 #define	VTAG_NAMES \
     "NON", "UFS", "NFS", "MFS", "MSDOSFS",			\
     "unused", "unused", "unused", "ISOFS", "unused",		\
+<<<<<<< HEAD
     "EXT2FS", "VFS", "NTFS", "UDF", "FUSEFS", "TMPFS",          \
+||||||| 6d253f95424
+    "EXT2FS", "VFS", "NTFS", "UDF", "FUSEFS", "TMPFS"
+=======
+    "EXT2FS", "VFS", "NTFS", "UDF", "FUSEFS", "TMPFS",		\
+>>>>>>> d0112b2a62c03920ac11376d51d880c7e9a6b383
     "HAMMER2"
 
 /*

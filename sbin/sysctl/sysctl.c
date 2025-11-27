@@ -1342,10 +1342,18 @@ vfsinit(void)
 			vfsvars[cnt].list = fusefsname;
 			vfsvars[cnt].size = FUSEFS_MAXID;
 		}
+<<<<<<< HEAD
                 if (!strcmp(vfc.vfc_name, MOUNT_HAMMER2)) {
                         vfsvars[cnt].list = hammer2name;
                         vfsvars[cnt].size = HAMMER2CTL_MAXID;
                 }
+||||||| 6d253f95424
+=======
+		if (!strcmp(vfc.vfc_name, MOUNT_HAMMER2)) {
+			vfsvars[cnt].list = hammer2name;
+			vfsvars[cnt].size = HAMMER2CTL_MAXID;
+		}
+>>>>>>> d0112b2a62c03920ac11376d51d880c7e9a6b383
 		vfs_typenums[cnt] = vfc.vfc_typenum;
 		strlcat(&names[loc], vfc.vfc_name, sizeof names - loc);
 		vfsname[cnt].ctl_name = &names[loc];
