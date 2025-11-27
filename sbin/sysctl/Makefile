@@ -3,6 +3,8 @@
 PROG=	sysctl
 MAN=	sysctl.8
 
+CPPFLAGS+=	-I${.CURDIR}/../../sys # XXX
+
 afterinstall:
 	ln -sf ../../sbin/sysctl ${DESTDIR}/usr/sbin
 	chown -h ${BINOWN}:${BINGRP} ${DESTDIR}/usr/sbin/sysctl
