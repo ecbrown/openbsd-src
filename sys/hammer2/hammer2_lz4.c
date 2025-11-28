@@ -68,7 +68,7 @@ Note : this source file requires "hammer2_lz4_encoder.h"
 // CPU Feature Detection
 //**************************************
 // 32 or 64 bits ?
-#if (defined(__x86_64__) || defined(_M_X64))   // Detects 64 bits mode
+#if (defined(__x86_64__) || defined(_M_X64)) || defined(__arm64__)  // Detects 64 bits mode
 #  define LZ4_ARCH64 1
 #else
 #  define LZ4_ARCH64 0
